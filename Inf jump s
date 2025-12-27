@@ -1,0 +1,100 @@
+-- ModuleScript (place this in ReplicatedStorage as "LocalHighlighterModule")
+local Players = game:GetService("Players")
+
+local Module = {}
+Module.__index = Module
+
+function Module.new(settings)
+    local self = setmetatable({}, Module)
+    self.settings = settings or {}
+    self.DEFAULT_COLOR = self.settings.defaultColor or Color3.fromRGB(255, 0, 0)
+    self.FILL_TRANSPARENCY = (self.settings.fillTransparency ~= nil) and self.settings.fillTransparency or 0.6
+    self.OUTLINE_TRANSPARENCY = (self.settings.outlineTransparency ~= nil) and self.settings.outlineTransparency or 0
+    self.highlights = {} -- player -> Highlight
+    self.connections = {}
+    return self
+end
+
+local function getPlayerColor(player, defaultColor)
+    if player.Team and player.TeamColor then
+        return player.TeamColor.Color
+    end
+    return defaultColor
+end
+
+function Module:_createHighlight(player, character)
+    if not character or not character:IsA("Model") then return end
+    if player == Players.LocalPlayer then return end
+
+    self:_removeHighlightForPlayer(player)
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "LocalESP_Highlight"
+    hl.Adornee = character
+    hl.FillColor = getPlayerColor(player, self.DEFAULT_COLOR)
+    hl.OutlineColor = Color3.fromRGB(0,0,0)
+    hl.FillTransparency = self.FILL_TRANSPARENCY
+    hl.OutlineTransparency = self.OUTLINE_TRANSPARENCY
+    hl.Parent = character
+
+    local connTeam = player:GetPropertyChangedSignal("TeamColor"):Connect(function()
+        if hl and hl.Parent then
+            hl.FillColor = getPlayerColor(player, self.DEFAULT_COLOR)
+        end
+    end)
+
+    local function cleanup()
+        if connTeam then connTeam:Disconnect() end
+        if hl and hl.Parent then hl:Destroy() end
+        self.highlights[player] = nil
+    end
+
+    local ancestryConn
+    ancestryConn = character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            cleanup()
+            if ancestryConn then ancestryConn:Disconnect() end
+        end
+    end)
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local diedConn
+        diedConn = humanoid.Died:Connect(function()
+            cleanup()
+            if diedConn then diedConn:Disconnect() end
+        end)
+    end
+
+    self.highlights[player] = hl
+end
+
+function Module:_removeHighlightForPlayer(player)
+    local existing = self.highlights[player]
+    if existing then
+        existing:Destroy()
+        self.highlights[player] = nil
+    end
+end
+
+function Module:Start()
+    if self._running then return end
+    self._running = true
+
+    -- Connect existing players
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            self:_createHighlight(player, player.Character)
+        end
+        local charConn = player.CharacterAdded:Connect(function(char)
+            self:_createHighlight(player, char)
+        end)
+        table.insert(self.connections, charConn)
+    end
+
+    local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+        local charConn = player.CharacterAdded:Connect(function(char)
+            self:_createHighlight(player, char)
+        end)
+        table.insert(self.connections
+        
